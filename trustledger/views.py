@@ -24,7 +24,8 @@ from django.db.models import Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from . import paypal, trustscore
 from .ai_agent import evaluate_delivery, mediate_dispute
@@ -58,10 +59,23 @@ def _error(message: str, status: int = 400, **extra) -> JsonResponse:
     return JsonResponse(payload, status=status)
 
 
+def _fail(request, message: str, status: int = 400, **extra):
+    """JSON for fetch()/HTMX callers, dark HTML page for browser navigation."""
+    if _wants_json(request):
+        return _error(message, status, **extra)
+    return render(
+        request,
+        "trustledger/error.html",
+        {"message": message, "status": status},
+        status=status,
+    )
+
+
 # ---------------------------------------------------------------------------
 # 1. Dashboard Home — bento-grid metrics + vault list + latest verdict
 # ---------------------------------------------------------------------------
 
+@ensure_csrf_cookie  # always issue csrftoken, even on an empty dashboard
 @require_GET
 def dashboard(request):
     """Render the main bento dashboard with KPIs, vaults and AI verdict feed."""
@@ -81,6 +95,7 @@ def dashboard(request):
         ]
     ).count()
 
+    latest_dispute = DisputeEvidence.objects.select_related("milestone").first()
     context = {
         "milestones": milestones,
         "metrics": {
@@ -92,7 +107,9 @@ def dashboard(request):
                 recommendation=Milestone.Recommendation.HUMAN_REVIEW
             ).count(),
         },
-        "latest_dispute": DisputeEvidence.objects.select_related("milestone").first(),
+        "latest_dispute": latest_dispute,
+        # Precomputed so the template never feeds a None/float into widthratio.
+        "latest_dispute_pct": round((latest_dispute.confidence or 0) * 100) if latest_dispute else 0,
         "thresholds": trustscore.thresholds(),
     }
     return render(request, "trustledger/dashboard.html", context)
@@ -151,15 +168,18 @@ def milestone_create(request):
 # 3. PayPal Funding & Capture flow
 # ---------------------------------------------------------------------------
 
-@require_POST
+@require_http_methods(["GET", "POST"])
 def fund_escrow(request, pk):
-    """Step 1 — POST-only: create a PayPal order and redirect to approval."""
+    """Step 1 — GET shows the dark funding page; POST creates the PayPal order."""
     milestone = get_object_or_404(Milestone, pk=pk)
 
+    if request.method == "GET":
+        return render(request, "trustledger/fund.html", {"milestone": milestone})
+
     if milestone.status != Milestone.Status.AWAITING_FUNDING:
-        return _error(f"Vault is '{milestone.status}', funding not allowed.", 409)
+        return _fail(request, f"Vault is '{milestone.status}', funding not allowed.", 409)
     if not milestone.verify_escrow_hash():
-        return _error("Escrow hash mismatch — funding blocked for audit review.", 409)
+        return _fail(request, "Escrow hash mismatch — funding blocked for audit review.", 409)
 
     try:
         order = paypal.create_escrow_order(
@@ -169,7 +189,7 @@ def fund_escrow(request, pk):
         )
     except paypal.PayPalError as exc:
         logger.warning("Escrow order failed for %s: %s", milestone.id, exc)
-        return _error("PayPal is unavailable. Check sandbox credentials.", 502)
+        return _fail(request, "PayPal is unavailable. Check sandbox credentials.", 502)
 
     Transaction.objects.create(
         milestone=milestone,
@@ -185,7 +205,7 @@ def fund_escrow(request, pk):
         None,
     )
     if not approve_link or not str(approve_link).startswith("https://"):
-        return _error("PayPal returned no valid approval link.", 502)
+        return _fail(request, "PayPal returned no valid approval link.", 502)
 
     if _wants_json(request):
         return JsonResponse({"ok": True, "approve_url": approve_link})
@@ -205,7 +225,7 @@ def capture_escrow(request, pk):
     ).order_by("-created_at").first()
 
     if not order_tx:
-        return _error("No PayPal order found for this vault.", 404)
+        return _fail(request, "No PayPal order found for this vault.", 404)
 
     token = (request.GET.get("token") or "").strip()
     if token != order_tx.paypal_order_id:
@@ -220,7 +240,7 @@ def capture_escrow(request, pk):
         capture = paypal.capture_order(order_tx.paypal_order_id)
     except paypal.PayPalError as exc:
         logger.warning("Capture failed for %s: %s", milestone.id, exc)
-        return _error("PayPal capture failed or was not approved.", 502)
+        return _fail(request, "PayPal capture failed or was not approved.", 502)
 
     capture_unit = (capture.get("purchase_units") or [{}])[0]
     payments = (capture_unit.get("payments") or {}).get("captures") or []
@@ -257,17 +277,17 @@ def submit_delivery(request, pk):
     milestone = get_object_or_404(Milestone, pk=pk)
 
     if milestone.status == Milestone.Status.AWAITING_FUNDING:
-        return _error("Fund the vault before submitting delivery proof.", 409)
+        return _fail(request, "Fund the vault before submitting delivery proof.", 409)
     if milestone.status in {
         Milestone.Status.RELEASED,
         Milestone.Status.REFUNDED,
         Milestone.Status.PARTIALLY_RELEASED,
     }:
-        return _error("This vault is already settled.", 409)
+        return _fail(request, "This vault is already settled.", 409)
 
     artifact = sanitize_text(request.POST.get("artifact") or "", 4000)
     if len(artifact) < 20:
-        return _error("Delivery proof must be at least 20 characters.", 400)
+        return _fail(request, "Delivery proof must be at least 20 characters.", 400)
 
     proof_type = sanitize_text(request.POST.get("proof_type") or "text", 10).lower()
     if proof_type not in DeliveryProof.ProofType.values:
@@ -284,7 +304,7 @@ def submit_delivery(request, pk):
         )
     except RuntimeError as exc:
         logger.error("Delivery audit failed for %s: %s", milestone.id, exc)
-        return _error("AI delivery audit unavailable. Check GEMINI_API_KEY.", 502)
+        return _fail(request, "AI delivery audit unavailable. Check GEMINI_API_KEY.", 502)
 
     recommendation = trustscore.classify(result["confidence"], result["decision"])
     proof = DeliveryProof.objects.create(
@@ -341,16 +361,16 @@ def approve_release(request, pk):
     milestone = get_object_or_404(Milestone, pk=pk)
 
     if milestone.status == Milestone.Status.AWAITING_FUNDING:
-        return _error("Vault is not funded — nothing to release.", 409)
+        return _fail(request, "Vault is not funded — nothing to release.", 409)
     if milestone.status in {
         Milestone.Status.RELEASED,
         Milestone.Status.REFUNDED,
         Milestone.Status.PARTIALLY_RELEASED,
     }:
-        return _error("This vault is already settled.", 409)
+        return _fail(request, "This vault is already settled.", 409)
     if not milestone.verify_escrow_hash():
         milestone.record_audit("release_blocked:hash_mismatch:human")
-        return _error("Escrow hash mismatch — release blocked for audit review.", 409)
+        return _fail(request, "Escrow hash mismatch — release blocked for audit review.", 409)
 
     actor = sanitize_ref(request.POST.get("actor") or "") or "operations"
     outcome = trustscore.human_release(milestone, actor=actor)
@@ -379,15 +399,15 @@ def dispute_mediate(request, pk):
     submitted_by = sanitize_ref(request.POST.get("submitted_by") or "") or "anonymous"
 
     if len(dispute_text) < 40:
-        return _error("Evidence logs must be at least 40 characters of plain text.", 400)
+        return _fail(request, "Evidence logs must be at least 40 characters of plain text.", 400)
     if milestone.status == Milestone.Status.AWAITING_FUNDING:
-        return _error("Fund the vault before opening a dispute.", 409)
+        return _fail(request, "Fund the vault before opening a dispute.", 409)
     if milestone.status in {
         Milestone.Status.RELEASED,
         Milestone.Status.REFUNDED,
         Milestone.Status.PARTIALLY_RELEASED,
     }:
-        return _error("This vault is already settled.", 409)
+        return _fail(request, "This vault is already settled.", 409)
 
     try:
         verdict = mediate_dispute(
@@ -397,7 +417,7 @@ def dispute_mediate(request, pk):
         )
     except RuntimeError as exc:
         logger.error("Mediation failed for milestone %s: %s", milestone.id, exc)
-        return _error("AI mediator unavailable. Check GEMINI_API_KEY.", 502)
+        return _fail(request, "AI mediator unavailable. Check GEMINI_API_KEY.", 502)
 
     evidence = DisputeEvidence.objects.create(
         milestone=milestone,

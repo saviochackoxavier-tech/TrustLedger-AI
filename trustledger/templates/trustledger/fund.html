@@ -1,0 +1,90 @@
+{% comment %}
+TrustLedger AI — Escrow Funding Page
+====================================
+Rendered on GET /pay/<uuid>/ so a browser navigation never lands on a raw
+JSON 405. Funds only move on the POST below (CSRF-protected).
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrustLedger AI — Fund escrow</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23059669'/%3E%3Ctext x='16' y='23' font-size='18' text-anchor='middle' fill='%23ecfdf5'%3E%E2%9A%96%3C/text%3E%3C/svg%3E" />
+  <script src="https://cdn.tailwindcss.com/3.4.5"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <style>
+    .glass { background: rgba(15, 23, 42, 0.72); backdrop-filter: blur(14px); }
+    .grid-aura {
+      background-image: radial-gradient(circle at 15% 10%, rgba(16,185,129,.10), transparent 42%),
+                        radial-gradient(circle at 85% 90%, rgba(99,102,241,.10), transparent 42%);
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans grid-aura antialiased flex items-center justify-center p-5">
+
+  <main class="w-full max-w-lg">
+    <a href="{% url 'trustledger:dashboard' %}" class="inline-flex items-center gap-2 text-xs text-slate-400 hover:text-slate-200 mb-4">
+      <i class="fa-solid fa-arrow-left"></i> Back to vaults
+    </a>
+
+    <div class="glass rounded-2xl border border-emerald-400/30 p-6 shadow-[0_0_24px_-4px_rgba(16,185,129,0.35)]">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-400/40 flex items-center justify-center">
+          <i class="fa-brands fa-paypal text-emerald-400"></i>
+        </div>
+        <div>
+          <h1 class="font-semibold text-lg leading-tight">Fund escrow</h1>
+          <p class="text-xs text-slate-400">{{ milestone.project_title }}</p>
+        </div>
+      </div>
+
+      <dl class="mt-6 space-y-3 text-sm">
+        <div class="flex items-baseline justify-between gap-4">
+          <dt class="text-slate-400">Amount</dt>
+          <dd class="font-mono text-emerald-300 text-lg">{{ milestone.currency }} {{ milestone.agreed_amount|floatformat:2 }}</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-4">
+          <dt class="text-slate-400">Client</dt>
+          <dd class="text-slate-200 text-right break-all">{{ milestone.client_ref }}</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-4">
+          <dt class="text-slate-400">Vendor</dt>
+          <dd class="text-slate-200 text-right break-all">{{ milestone.vendor_ref }}</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-4">
+          <dt class="text-slate-400">Status</dt>
+          <dd class="text-slate-200">{{ milestone.get_status_display }}</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-4">
+          <dt class="text-slate-400">Escrow hash</dt>
+          <dd class="font-mono text-[11px] text-slate-500 text-right break-all">{{ milestone.escrow_hash }}</dd>
+        </div>
+      </dl>
+
+      {% if error %}
+        <p class="mt-5 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+          <i class="fa-solid fa-triangle-exclamation mr-1"></i>{{ error }}
+        </p>
+      {% endif %}
+
+      {% if milestone.status == 'awaiting_funding' %}
+        <form method="post" class="mt-6">
+          {% csrf_token %}
+          <button type="submit"
+                  class="w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 transition disabled:opacity-50">
+            <i class="fa-brands fa-paypal mr-1.5"></i>Continue to PayPal Sandbox
+          </button>
+        </form>
+        <p class="mt-3 text-[11px] text-slate-500">
+          You will be redirected to PayPal to approve the payment. TrustLedger captures it on return.
+        </p>
+      {% else %}
+        <p class="mt-6 rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
+          This vault is <span class="text-slate-200">{{ milestone.get_status_display }}</span> — funding is no longer available.
+        </p>
+      {% endif %}
+    </div>
+  </main>
+</body>
+</html>

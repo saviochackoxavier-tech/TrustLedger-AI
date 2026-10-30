@@ -76,8 +76,11 @@ def main():
     if not milestone_id:
         return report()
 
-    # --- 3. POST-only funding --------------------------------------------
-    check("GET on fund route is 405", session.get(f"{BASE}/pay/{milestone_id}/", timeout=10).status_code == 405)
+    # --- 3. Funding page renders (no blank/JSON screen) -------------------
+    fund_page = session.get(f"{BASE}/pay/{milestone_id}/", timeout=10)
+    check("GET fund page renders HTML (200)", fund_page.status_code == 200, fund_page.status_code)
+    check("fund page is the dark template", "Fund escrow" in fund_page.text)
+    check("fund page carries a CSRF token", "csrfmiddlewaretoken" in fund_page.text)
 
     # --- 4. State guards --------------------------------------------------
     unfunded = session.post(

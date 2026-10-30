@@ -145,10 +145,23 @@ class FundingFlowTests(TestCase):
             agreed_amount=Decimal("500.00"), status=Milestone.Status.AWAITING_FUNDING,
         )
 
-    def test_fund_is_post_only(self):
+    def test_fund_get_renders_dark_page(self):
+        """A browser hitting /pay/<id>/ must see the dark funding page, not JSON."""
         m = self._funded_ready()
         res = self.client.get(reverse("trustledger:fund", args=[m.pk]))
-        self.assertEqual(res.status_code, 405)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Fund escrow")
+        self.assertContains(res, "csrfmiddlewaretoken")
+        m.refresh_from_db()
+        self.assertEqual(m.status, Milestone.Status.AWAITING_FUNDING)
+
+    def test_fund_post_conflict_renders_html_for_browser(self):
+        m = self._funded_ready()
+        m.status = Milestone.Status.FUNDED
+        m.save(update_fields=["status"])
+        res = self.client.post(reverse("trustledger:fund", args=[m.pk]))
+        self.assertEqual(res.status_code, 409)
+        self.assertContains(res, "Action not completed", status_code=409)
 
     def test_fund_without_paypal_credentials_fails_closed(self):
         m = self._funded_ready()
@@ -458,6 +471,22 @@ class DashboardAndSeederTests(TestCase):
         res = self.client.get(reverse("trustledger:dashboard"))
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, "TrustLedger")
+
+    def test_dashboard_has_no_unrendered_template_tags(self):
+        """Guards against raw {{ }} / {% %} leaking into the rendered page."""
+        call_command("seed_demo", verbosity=0)
+        html = self.client.get(reverse("trustledger:dashboard")).content.decode()
+        self.assertNotIn("{%", html)
+        self.assertNotIn("{{", html)
+        self.assertEqual(html.count("<div"), html.count("</div>"))
+        self.assertEqual(html.count("<section"), html.count("</section>"))
+        self.assertIn("style=\"width: 94%\"", html)  # verdict meter precomputed
+
+    def test_dashboard_renders_without_disputes(self):
+        """Empty state: no confidence meter, no template error."""
+        res = self.client.get(reverse("trustledger:dashboard"))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "No arbitrations yet")
 
     def test_seeder_populates_and_is_idempotent(self):
         call_command("seed_demo", verbosity=0)
