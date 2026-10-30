@@ -1,0 +1,69 @@
+# ============ TrustLedger AI — .gitignore ============
+
+# ---- Secrets (NEVER commit) ----
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ---- Python bytecode / cache ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# ---- Virtual environments ----
+venv/
+.venv/
+env/
+ENV/
+
+# ---- Django ----
+db.sqlite3
+db.sqlite3-journal
+*.log
+local_settings.py
+media/
+staticfiles/
+
+# ---- Migrations: keep app migrations tracked; ignore stray project ones ----
+# (intentionally NOT ignoring trustledger/migrations/)
+
+# ---- Packaging / build ----
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-log.txt
+
+# ---- Testing / coverage ----
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+
+# ---- Type checkers / linters ----
+.mypy_cache/
+.ruff_cache/
+
+# ---- IDE / editor configs ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sln
+*.sublime-project
+*.sublime-workspace
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ---- Hackathon demo artifacts ----
+server.log
+nohup.out
+docs/screenshots/*.tmp.png

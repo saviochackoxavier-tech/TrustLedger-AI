@@ -1,0 +1,32 @@
+{% comment %}
+TrustLedger AI — Capture link guard page.
+Rendered when PayPal's return URL carries a token that does not match the
+stored order for this vault. No money moves from here.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrustLedger AI — Capture link not verified</title>
+  <script src="https://cdn.tailwindcss.com/3.4.5"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased flex items-center justify-center p-6">
+  <div class="max-w-md w-full rounded-2xl border border-amber-400/30 bg-slate-900/70 p-8 text-center">
+    <div class="h-12 w-12 mx-auto rounded-xl bg-amber-500/10 border border-amber-400/40 flex items-center justify-center">
+      <i class="fa-solid fa-shield-halved text-amber-400 text-lg"></i>
+    </div>
+    <h1 class="mt-4 text-lg font-semibold">Capture link not verified</h1>
+    <p class="mt-2 text-sm text-slate-400">
+      This return URL does not match a pending PayPal order for
+      <span class="text-slate-200">{{ milestone.project_title }}</span>. Nothing was captured.
+    </p>
+    <p class="mt-3 text-[11px] text-slate-500 font-mono">order {{ order_id|truncatechars:20 }}</p>
+    <a href="{% url 'trustledger:dashboard' %}"
+       class="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 transition">
+      <i class="fa-solid fa-arrow-left"></i> Back to vaults
+    </a>
+  </div>
+</body>
+</html>

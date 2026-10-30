@@ -1,0 +1,623 @@
+{% comment %}
+TrustLedger AI — Dashboard (Bento Grid, Dark Futuristic Fintech)
+Tailwind CSS v3 via CDN + FontAwesome 6 via CDN. Zero build step.
+
+Security notes:
+- Every state change is a POST form (or fetch with X-CSRFToken) — never a GET link.
+- All server strings render through Django autoescape; inline JS args use |escapejs.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrustLedger AI — Autonomous Escrow & Dispute Mediator</title>
+  <script src="https://cdn.tailwindcss.com/3.4.5"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui'] },
+          boxShadow: {
+            glow: '0 0 24px -4px rgba(16, 185, 129, 0.35)',
+            'glow-amber': '0 0 24px -4px rgba(245, 158, 11, 0.35)',
+            'glow-fuchsia': '0 0 24px -4px rgba(217, 70, 239, 0.35)',
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    .glass { background: rgba(15, 23, 42, 0.72); backdrop-filter: blur(14px); }
+    .grid-aura {
+      background-image: radial-gradient(circle at 15% 10%, rgba(16,185,129,.10), transparent 42%),
+                        radial-gradient(circle at 85% 90%, rgba(99,102,241,.10), transparent 42%);
+    }
+    .card { transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease; }
+    .card:hover { transform: translateY(-3px); }
+    @keyframes pulse-ring { 0% { opacity: .7; } 50% { opacity: .2; } 100% { opacity: .7; } }
+    .live-dot { animation: pulse-ring 1.6s infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .card, .live-dot { transition: none; animation: none; }
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans grid-aura antialiased">
+
+<!-- ===== Top Bar ===== -->
+<header class="sticky top-0 z-40 glass border-b border-slate-800/80">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="h-9 w-9 rounded-xl bg-emerald-500/10 border border-emerald-400/40 flex items-center justify-center shadow-glow">
+        <i class="fa-solid fa-scale-balanced text-emerald-400"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-semibold tracking-tight">TrustLedger <span class="text-emerald-400">AI</span></h1>
+        <p class="text-[11px] text-slate-400 -mt-0.5">Autonomous Vendor Escrow & Dispute Mediator</p>
+      </div>
+    </div>
+    <button onclick="openMilestoneModal()"
+            class="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 transition shadow-glow">
+      <i class="fa-solid fa-plus"></i> New Milestone
+    </button>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300 flex items-center gap-2">
+        <i class="fa-solid fa-circle-check"></i> {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <!-- ===== Bento Row 1 — Metrics Overview ===== -->
+  <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+    <div class="card glass rounded-2xl border border-slate-800 hover:border-emerald-400/40 p-6">
+      <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-400">Total Escrowed</p>
+        <i class="fa-solid fa-vault text-emerald-400/70"></i>
+      </div>
+      <p class="mt-3 text-3xl font-bold tracking-tight text-emerald-300">${{ metrics.escrowed_total|floatformat:2 }}</p>
+      <p class="mt-1 text-xs text-slate-500">Held across all active vaults</p>
+    </div>
+
+    <div class="card glass rounded-2xl border border-slate-800 hover:border-indigo-400/40 p-6">
+      <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-400">Active Vaults</p>
+        <i class="fa-solid fa-box-archive text-indigo-400/70"></i>
+      </div>
+      <p class="mt-3 text-3xl font-bold tracking-tight">{{ metrics.active_vaults }}</p>
+      <p class="mt-1 text-xs text-slate-500">Funded · Submitted · Disputed</p>
+    </div>
+
+    <div class="card glass rounded-2xl border border-slate-800 hover:border-amber-400/40 p-6">
+      <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-400">Resolved Disputes</p>
+        <i class="fa-solid fa-gavel text-amber-400/70"></i>
+      </div>
+      <p class="mt-3 text-3xl font-bold tracking-tight text-amber-300">{{ metrics.resolved_disputes }}</p>
+      <p class="mt-1 text-xs text-slate-500">Settled by AI arbitration</p>
+    </div>
+
+    <div class="card glass rounded-2xl border border-fuchsia-400/20 hover:border-fuchsia-400/50 p-6">
+      <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-400">Auto-released by TrustScore</p>
+        <i class="fa-solid fa-bolt text-fuchsia-400/70"></i>
+      </div>
+      <p class="mt-3 text-3xl font-bold tracking-tight text-fuchsia-300">{{ metrics.auto_released }}</p>
+      <p class="mt-1 text-xs text-slate-500">
+        ≥ {{ thresholds.auto_release|floatformat:2 }} confidence · {{ metrics.pending_review }} awaiting human review
+      </p>
+    </div>
+  </section>
+
+  <!-- ===== Bento Row 2 — Vaults Table (2/3) + AI Verdict Panel (1/3) ===== -->
+  <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Active Escrow Vaults -->
+    <div class="lg:col-span-2 glass rounded-2xl border border-slate-800 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-semibold flex items-center gap-2">
+          <i class="fa-solid fa-layer-group text-indigo-400"></i> Active Escrow Vaults
+        </h2>
+        <span class="inline-flex items-center gap-1.5 text-[11px] text-slate-400">
+          <span class="live-dot h-2 w-2 rounded-full bg-emerald-400"></span> LIVE
+        </span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[760px] text-sm">
+          <thead>
+            <tr class="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-800">
+              <th class="py-3 pr-4">Milestone</th>
+              <th class="py-3 pr-4">Amount</th>
+              <th class="py-3 pr-4">Status</th>
+              <th class="py-3 pr-4">TrustScore</th>
+              <th class="py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800/70">
+            {% for m in milestones %}
+            <tr class="hover:bg-slate-800/30 transition align-top">
+              <td class="py-3 pr-4">
+                <p class="font-medium">
+                  {{ m.project_title }}
+                  {% if m.ledger_verified %}
+                    <i class="fa-solid fa-lock text-emerald-400/80 text-[10px] ml-1" title="Ledger entry verified and locked"></i>
+                  {% endif %}
+                </p>
+                <p class="text-xs text-slate-500">
+                  <i class="fa-regular fa-user mr-1"></i>{{ m.client_ref }}
+                  <i class="fa-solid fa-arrow-right mx-1 text-slate-600"></i>
+                  <i class="fa-solid fa-store mr-1"></i>{{ m.vendor_ref }}
+                </p>
+                <p class="text-[10px] text-slate-600 font-mono mt-1">
+                  {{ m.id|truncatechars:13 }} · hash {{ m.escrow_hash|truncatechars:10 }}
+                  {% if m.audit_hash %} · audit {{ m.audit_hash|truncatechars:9 }}{% endif %}
+                </p>
+              </td>
+              <td class="py-3 pr-4 font-semibold text-emerald-300 whitespace-nowrap">{{ m.currency }} {{ m.agreed_amount|floatformat:2 }}</td>
+              <td class="py-3 pr-4">
+                {% if m.status == 'funded' or m.status == 'work_submitted' %}
+                  <span class="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-400/40 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
+                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>{{ m.get_status_display }}
+                  </span>
+                {% elif m.status == 'disputed' or m.status == 'split' %}
+                  <span class="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-400/40 px-2.5 py-0.5 text-xs font-medium text-amber-300">
+                    <span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>{{ m.get_status_display }}
+                  </span>
+                {% elif m.status == 'awaiting_funding' %}
+                  <span class="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 border border-indigo-400/40 px-2.5 py-0.5 text-xs font-medium text-indigo-300">
+                    <span class="h-1.5 w-1.5 rounded-full bg-indigo-400"></span>{{ m.get_status_display }}
+                  </span>
+                {% else %}
+                  <span class="inline-flex items-center gap-1 rounded-full bg-slate-500/10 border border-slate-400/30 px-2.5 py-0.5 text-xs font-medium text-slate-300">
+                    {{ m.get_status_display }}
+                  </span>
+                {% endif %}
+              </td>
+              <td class="py-3 pr-4 whitespace-nowrap">
+                {% if m.trust_score is not None %}
+                  <p class="font-mono text-sm {% if m.trust_score >= thresholds.auto_release %}text-fuchsia-300{% elif m.trust_score >= thresholds.review %}text-amber-300{% else %}text-rose-300{% endif %}">
+                    {{ m.trust_score|floatformat:2 }}
+                  </p>
+                  <span class="text-[10px] uppercase tracking-wide
+                    {% if m.recommendation == 'auto_release' %}text-fuchsia-400
+                    {% elif m.recommendation == 'human_review' %}text-amber-400
+                    {% else %}text-rose-400{% endif %}">
+                    {% if m.recommendation == 'auto_release' %}<i class="fa-solid fa-bolt mr-0.5"></i>auto-release
+                    {% elif m.recommendation == 'human_review' %}<i class="fa-solid fa-user-check mr-0.5"></i>review
+                    {% else %}<i class="fa-solid fa-triangle-exclamation mr-0.5"></i>mediate{% endif %}
+                  </span>
+                {% else %}
+                  <span class="text-xs text-slate-600">—</span>
+                {% endif %}
+              </td>
+              <td class="py-3 text-right whitespace-nowrap">
+                <div class="flex flex-col items-end gap-1.5">
+                  {% if m.status == 'awaiting_funding' %}
+                    <form method="post" action="{% url 'trustledger:fund' m.id %}">
+                      {% csrf_token %}
+                      <button type="submit"
+                              class="rounded-lg bg-emerald-500/90 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 transition">
+                        <i class="fa-brands fa-paypal mr-1"></i>Fund
+                      </button>
+                    </form>
+                  {% else %}
+                    {% if m.status != 'released' and m.status != 'refunded' and m.status != 'split' %}
+                      <button onclick="openDeliveryModal('{{ m.id }}', '{{ m.project_title|escapejs }}', '{{ m.agreed_amount|floatformat:2 }} {{ m.currency }}')"
+                              class="rounded-lg border border-fuchsia-400/40 bg-fuchsia-500/10 px-3 py-1.5 text-xs font-semibold text-fuchsia-300 hover:bg-fuchsia-500/20 transition">
+                        <i class="fa-solid fa-cube mr-1"></i>Deliver
+                      </button>
+                      {% if m.recommendation == 'human_review' %}
+                        <form method="post" action="{% url 'trustledger:release' m.id %}">
+                          {% csrf_token %}
+                          <button type="submit"
+                                  class="rounded-lg bg-amber-400/90 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-amber-300 transition">
+                            <i class="fa-solid fa-unlock-keyhole mr-1"></i>Approve release
+                          </button>
+                        </form>
+                      {% endif %}
+                    {% endif %}
+                    {% if m.status != 'released' and m.status != 'refunded' and m.status != 'split' %}
+                      <button onclick="openDisputeModal('{{ m.id }}', '{{ m.project_title|escapejs }}', '{{ m.agreed_amount|floatformat:2 }} {{ m.currency }}')"
+                              class="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition">
+                        <i class="fa-solid fa-scale-balanced mr-1"></i>Dispute
+                      </button>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5" class="py-10 text-center text-slate-500">
+                <i class="fa-solid fa-inbox text-2xl mb-2 block text-slate-600"></i>
+                No milestones yet — create your first escrow agreement.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <p class="mt-4 text-[11px] text-slate-500">
+        <i class="fa-solid fa-bolt text-fuchsia-400/70 mr-1"></i>
+        TrustScore AI: ≥ {{ thresholds.auto_release|floatformat:2 }} auto-releases via PayPal Payouts ·
+        {{ thresholds.review|floatformat:2 }}–{{ thresholds.auto_release|floatformat:2 }} holds for human review ·
+        below {{ thresholds.review|floatformat:2 }} escalates to mediation.
+      </p>
+    </div>
+
+    <!-- AI Verdict Panel -->
+    <div class="glass rounded-2xl border border-slate-800 p-6 flex flex-col" id="verdict-panel">
+      <h2 class="font-semibold flex items-center gap-2 mb-4">
+        <i class="fa-solid fa-brain text-fuchsia-400"></i> AI Verdict
+        <span class="ml-auto text-[11px] text-slate-500">Gemini Arbitration</span>
+      </h2>
+
+      {% if latest_dispute %}
+      <div id="verdict-body">
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div class="flex items-center justify-between">
+            <p class="text-xs text-slate-400">{{ latest_dispute.milestone.project_title }}</p>
+            <span id="verdict-badge"
+                  class="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide
+                         {% if latest_dispute.ai_verdict == 'release' %}bg-emerald-500/15 text-emerald-300 border border-emerald-400/40
+                         {% elif latest_dispute.ai_verdict == 'refund' %}bg-amber-500/15 text-amber-300 border border-amber-400/40
+                         {% else %}bg-indigo-500/15 text-indigo-300 border border-indigo-400/40{% endif %}">
+              {{ latest_dispute.ai_verdict }}
+            </span>
+          </div>
+
+          <!-- Confidence meter -->
+          <div class="mt-4">
+            <div class="flex justify-between text-xs text-slate-400 mb-1">
+              <span>Confidence</span>
+              <span id="verdict-confidence-num" class="font-mono text-emerald-300">
+                {% widthratio latest_dispute.confidence 1 100 %}%
+              </span>
+            </div>
+            <div class="h-2 rounded-full bg-slate-800 overflow-hidden">
+              <div id="verdict-confidence-bar"
+                   class="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-700"
+                   style="width: {% widthratio latest_dispute.confidence 1 100 %}%"></div>
+            </div>
+          </div>
+
+          <p id="verdict-reasoning" class="mt-4 text-sm leading-relaxed text-slate-300">
+            {{ latest_dispute.reasoning }}
+          </p>
+        </div>
+        <p class="mt-3 text-[11px] text-slate-500 flex items-center gap-1.5">
+          <i class="fa-regular fa-clock"></i>
+          Arbitrated {{ latest_dispute.created_at|date:"M d, H:i" }} · filed by {{ latest_dispute.submitted_by }}
+        </p>
+      </div>
+      {% else %}
+      <div id="verdict-empty" class="flex-1 flex flex-col items-center justify-center text-center text-slate-500 py-10">
+        <i class="fa-solid fa-robot text-3xl mb-3 text-slate-600"></i>
+        <p class="text-sm">No arbitrations yet.<br/>Submit a dispute to see the AI rule in real time.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</main>
+
+<!-- ===== Delivery Proof Modal (TrustScore AI) ===== -->
+<div id="delivery-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+  <div class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onclick="closeDeliveryModal()"></div>
+  <div class="relative glass rounded-2xl border border-fuchsia-400/30 shadow-glow-fuchsia w-full max-w-lg p-6">
+    <button onclick="closeDeliveryModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-200">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+    <h3 class="font-semibold text-lg flex items-center gap-2">
+      <i class="fa-solid fa-cube text-fuchsia-400"></i> Submit Delivery Proof
+    </h3>
+    <p class="mt-1 text-xs text-slate-400">
+      Vault: <span id="delivery-milestone-title" class="text-slate-200 font-medium"></span>
+      · <span id="delivery-milestone-amount" class="font-mono text-emerald-300"></span>
+    </p>
+
+    <form id="delivery-form" class="mt-5 space-y-4" onsubmit="submitDelivery(event)">
+      <input type="hidden" id="delivery-milestone-id" />
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1.5">Proof type</label>
+          <select id="delivery-type"
+                  class="w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm focus:border-fuchsia-400/60 focus:outline-none">
+            <option value="link">Artifact URL</option>
+            <option value="commit">Repository commit</option>
+            <option value="text" selected>Delivery notes</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1.5">Submitted by</label>
+          <input id="delivery-submitted-by" type="text" placeholder="vendor"
+                 class="w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm focus:border-fuchsia-400/60 focus:outline-none" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1.5">
+          Delivery proof <span class="text-slate-500">(URL, commit SHA, acceptance notes — min 20 chars)</span>
+        </label>
+        <textarea id="delivery-artifact" rows="5" required
+                  class="w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm font-mono focus:border-fuchsia-400/60 focus:outline-none"
+                  placeholder="https://staging.example.com · commit 9f2ac1b · Lighthouse 96/100 · all 40 screens delivered in Figma"></textarea>
+      </div>
+      <button id="delivery-submit-btn" type="submit"
+              class="w-full rounded-xl bg-fuchsia-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-fuchsia-400 transition shadow-glow-fuchsia disabled:opacity-50">
+        <i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i>Run TrustScore Audit
+      </button>
+    </form>
+
+    <div id="delivery-result" class="mt-5 hidden rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+      <div class="flex items-center justify-between">
+        <span id="delivery-result-badge" class="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide"></span>
+        <span id="delivery-result-confidence" class="text-xs font-mono"></span>
+      </div>
+      <div class="mt-2 h-2 rounded-full bg-slate-800 overflow-hidden">
+        <div id="delivery-result-bar" class="h-full rounded-full bg-gradient-to-r from-fuchsia-500 to-emerald-400 transition-all duration-700" style="width:0%"></div>
+      </div>
+      <p id="delivery-result-reasoning" class="mt-3 text-sm leading-relaxed text-slate-300"></p>
+      <p id="delivery-result-gaps" class="mt-2 text-xs text-amber-300 hidden"></p>
+      <p id="delivery-result-action" class="mt-3 text-xs font-semibold"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Dispute Modal ===== -->
+<div id="dispute-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+  <div class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onclick="closeDisputeModal()"></div>
+  <div class="relative glass rounded-2xl border border-amber-400/30 shadow-glow-amber w-full max-w-lg p-6">
+    <button onclick="closeDisputeModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-200">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+    <h3 class="font-semibold text-lg flex items-center gap-2">
+      <i class="fa-solid fa-scale-balanced text-amber-400"></i> Trigger AI Arbitration
+    </h3>
+    <p class="mt-1 text-xs text-slate-400">
+      Vault: <span id="dispute-milestone-title" class="text-slate-200 font-medium"></span>
+      · <span id="dispute-milestone-amount" class="font-mono text-emerald-300"></span>
+    </p>
+
+    <form id="dispute-form" class="mt-5 space-y-4" onsubmit="submitDispute(event)">
+      <input type="hidden" id="dispute-milestone-id" />
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1.5">Filed by</label>
+        <input id="dispute-submitted-by" type="text" placeholder="client / vendor"
+               class="w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm focus:border-amber-400/60 focus:outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1.5">
+          Evidence logs <span class="text-slate-500">(chat logs, delivery notes, contract excerpts — min 40 chars)</span>
+        </label>
+        <textarea id="dispute-evidence" rows="6" required
+                  class="w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm font-mono focus:border-amber-400/60 focus:outline-none"
+                  placeholder="Paste the full conversation / delivery timeline here..."></textarea>
+      </div>
+      <button id="dispute-submit-btn" type="submit"
+              class="w-full rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-amber-400 transition shadow-glow-amber disabled:opacity-50">
+        <i class="fa-solid fa-scale-balanced mr-1.5"></i>Submit to AI Mediator
+      </button>
+    </form>
+
+    <div id="dispute-result" class="mt-5 hidden rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+      <div class="flex items-center justify-between">
+        <span id="result-badge" class="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide"></span>
+        <span id="result-confidence" class="text-xs font-mono"></span>
+      </div>
+      <div class="mt-2 h-2 rounded-full bg-slate-800 overflow-hidden">
+        <div id="result-bar" class="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-700" style="width:0%"></div>
+      </div>
+      <p id="result-reasoning" class="mt-3 text-sm leading-relaxed text-slate-300"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Milestone Modal ===== -->
+<div id="milestone-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+  <div class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onclick="closeMilestoneModal()"></div>
+  <div class="relative glass rounded-2xl border border-emerald-400/30 shadow-glow w-full max-w-lg p-6">
+    <button onclick="closeMilestoneModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-200">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+    <h3 class="font-semibold text-lg flex items-center gap-2">
+      <i class="fa-solid fa-file-signature text-emerald-400"></i> New Escrow Milestone
+    </h3>
+    <form id="milestone-form" class="mt-5 space-y-4" onsubmit="submitMilestone(event)">
+      <input type="text" id="ms-title" required maxlength="200" placeholder="Project title"
+             class="w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm focus:border-emerald-400/60 focus:outline-none" />
+      <textarea id="ms-desc" rows="2" maxlength="4000" placeholder="Scope of work (optional — used by TrustScore AI)"
+                class="w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm focus:border-emerald-400/60 focus:outline-none"></textarea>
+      <div class="grid grid-cols-2 gap-4">
+        <input type="number" id="ms-amount" step="0.01" min="0.01" max="1000000" required placeholder="Amount (e.g. 1250.00)"
+               class="rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm focus:border-emerald-400/60 focus:outline-none" />
+        <input type="text" id="ms-currency" value="USD" maxlength="3"
+               class="rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm uppercase focus:border-emerald-400/60 focus:outline-none" />
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <input type="text" id="ms-client" required maxlength="120" placeholder="Client ref (email)"
+               class="rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm focus:border-emerald-400/60 focus:outline-none" />
+        <input type="text" id="ms-vendor" required maxlength="120" placeholder="Vendor ref (email)"
+               class="rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm focus:border-emerald-400/60 focus:outline-none" />
+      </div>
+      <button id="ms-submit-btn" type="submit"
+              class="w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 transition shadow-glow disabled:opacity-50">
+        <i class="fa-solid fa-lock mr-1.5"></i>Seal Agreement & Hash
+      </button>
+    </form>
+  </div>
+</div>
+
+<footer class="max-w-7xl mx-auto px-6 py-8 text-center text-xs text-slate-600">
+  TrustLedger AI · PayPal Sandbox · Gemini Arbitration · Escrow integrity via SHA-256
+</footer>
+
+<script>
+  // ---------- Modal plumbing ----------
+  const open = (id) => { const el = document.getElementById(id); el.classList.remove('hidden'); el.classList.add('flex'); };
+  const close = (id) => { const el = document.getElementById(id); el.classList.add('hidden'); el.classList.remove('flex'); };
+  const openDisputeModal = (id, title, amount) => {
+    document.getElementById('dispute-milestone-id').value = id;
+    document.getElementById('dispute-milestone-title').textContent = title;
+    document.getElementById('dispute-milestone-amount').textContent = amount;
+    document.getElementById('dispute-result').classList.add('hidden');
+    open('dispute-modal');
+  };
+  const openDeliveryModal = (id, title, amount) => {
+    document.getElementById('delivery-milestone-id').value = id;
+    document.getElementById('delivery-milestone-title').textContent = title;
+    document.getElementById('delivery-milestone-amount').textContent = amount;
+    document.getElementById('delivery-result').classList.add('hidden');
+    open('delivery-modal');
+  };
+  const closeDisputeModal = () => close('dispute-modal');
+  const closeDeliveryModal = () => close('delivery-modal');
+  const openMilestoneModal = () => open('milestone-modal');
+  const closeMilestoneModal = () => close('milestone-modal');
+
+  const badgeClass = (d) =>
+    d === 'release' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-400/40'
+    : d === 'refund' ? 'bg-amber-500/15 text-amber-300 border border-amber-400/40'
+    : 'bg-indigo-500/15 text-indigo-300 border border-indigo-400/40';
+
+  function getCookie(name) {  // Django CSRF for fetch()
+    const m = document.cookie.match(new RegExp('(^|;\\s*)' + name + '=([^;]*)'));
+    return m ? decodeURIComponent(m[2]) : null;
+  }
+
+  // ---------- TrustScore AI delivery submission ----------
+  async function submitDelivery(e) {
+    e.preventDefault();
+    const btn = document.getElementById('delivery-submit-btn');
+    const id = document.getElementById('delivery-milestone-id').value;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i>Auditing delivery proof...';
+
+    const body = new FormData();
+    body.append('artifact', document.getElementById('delivery-artifact').value);
+    body.append('proof_type', document.getElementById('delivery-type').value);
+    body.append('submitted_by', document.getElementById('delivery-submitted-by').value || 'vendor');
+
+    try {
+      const res = await fetch(`/deliver/${id}/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCookie('csrftoken'), 'X-Requested-With': 'XMLHttpRequest' },
+        body,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Delivery audit failed');
+
+      const pct = Math.round(data.confidence * 100);
+      document.getElementById('delivery-result').classList.remove('hidden');
+      const badge = document.getElementById('delivery-result-badge');
+      badge.textContent = data.decision;
+      badge.className = 'rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ' + badgeClass(data.decision);
+      document.getElementById('delivery-result-confidence').textContent = pct + '% confidence';
+      document.getElementById('delivery-result-bar').style.width = pct + '%';
+      document.getElementById('delivery-result-reasoning').textContent = data.reasoning;
+
+      const gaps = document.getElementById('delivery-result-gaps');
+      if (data.missing_items) { gaps.textContent = 'Gaps: ' + data.missing_items; gaps.classList.remove('hidden'); }
+      else { gaps.classList.add('hidden'); }
+
+      const action = document.getElementById('delivery-result-action');
+      if (data.recommendation === 'auto_release') {
+        action.className = 'mt-3 text-xs font-semibold text-fuchsia-300';
+        action.textContent = '⚡ TrustScore ≥ auto-release threshold — PayPal payout dispatched automatically.';
+      } else if (data.recommendation === 'human_review') {
+        action.className = 'mt-3 text-xs font-semibold text-amber-300';
+        action.textContent = '⏸ Held for human review — use "Approve release" to settle this vault.';
+      } else {
+        action.className = 'mt-3 text-xs font-semibold text-rose-300';
+        action.textContent = '⚠ Escalated to mediation — submit full evidence via Dispute.';
+      }
+
+      setTimeout(() => window.location.reload(), 3200);  // refresh vault table
+    } catch (err) {
+      alert('Delivery audit error: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i>Run TrustScore Audit';
+    }
+  }
+
+  // ---------- AI Dispute submission (live verdict) ----------
+  async function submitDispute(e) {
+    e.preventDefault();
+    const btn = document.getElementById('dispute-submit-btn');
+    const id = document.getElementById('dispute-milestone-id').value;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i>AI is deliberating...';
+
+    const body = new FormData();
+    body.append('evidence', document.getElementById('dispute-evidence').value);
+    body.append('submitted_by', document.getElementById('dispute-submitted-by').value || 'anonymous');
+
+    try {
+      const res = await fetch(`/dispute/${id}/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCookie('csrftoken'), 'X-Requested-With': 'XMLHttpRequest' },
+        body,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Mediation failed');
+
+      const pct = Math.round(data.confidence * 100);
+      const result = document.getElementById('dispute-result');
+      result.classList.remove('hidden');
+      const badge = document.getElementById('result-badge');
+      badge.textContent = data.decision;
+      badge.className = 'rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ' + badgeClass(data.decision);
+      document.getElementById('result-confidence').textContent = pct + '% confidence';
+      document.getElementById('result-bar').style.width = pct + '%';
+      document.getElementById('result-reasoning').textContent = data.reasoning;
+
+      setTimeout(() => window.location.reload(), 2600);  // refresh vault table
+    } catch (err) {
+      alert('Arbitration error: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-scale-balanced mr-1.5"></i>Submit to AI Mediator';
+    }
+  }
+
+  // ---------- Milestone creation ----------
+  async function submitMilestone(e) {
+    e.preventDefault();
+    const btn = document.getElementById('ms-submit-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i>Sealing...';
+
+    const body = new FormData();
+    body.append('project_title', document.getElementById('ms-title').value);
+    body.append('description', document.getElementById('ms-desc').value);
+    body.append('agreed_amount', document.getElementById('ms-amount').value);
+    body.append('currency', document.getElementById('ms-currency').value);
+    body.append('client_ref', document.getElementById('ms-client').value);
+    body.append('vendor_ref', document.getElementById('ms-vendor').value);
+
+    try {
+      const res = await fetch('{% url "trustledger:milestone_create" %}', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCookie('csrftoken'), 'X-Requested-With': 'XMLHttpRequest' },
+        body,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(Object.values(data.errors || {}).join(', ') || data.error || 'Creation failed');
+      window.location.reload();
+    } catch (err) {
+      alert('Error: ' + err.message);
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-lock mr-1.5"></i>Seal Agreement & Hash';
+    }
+  }
+</script>
+</body>
+</html>
